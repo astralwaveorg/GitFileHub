@@ -4,9 +4,13 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY || 'default-encryption-key-change-me-32b';
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key || key === 'change-this-to-a-random-key' || key === 'change-this-to-a-random-32-byte-key') {
+    console.warn('[GitFileDock] WARNING: ENCRYPTION_KEY is not set or is still the default value. SSH keys are NOT securely encrypted.');
+  }
+  const effectiveKey = key || 'insecure-default-do-not-use-in-production';
   // Ensure the key is exactly 32 bytes
-  return crypto.createHash('sha256').update(key).digest();
+  return crypto.createHash('sha256').update(effectiveKey).digest();
 }
 
 export function encrypt(text: string): string {

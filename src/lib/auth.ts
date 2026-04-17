@@ -1,8 +1,16 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { cookies } from 'next/headers';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
+const JWT_SECRET = (() => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret === 'change-this-to-a-random-string') {
+    console.warn('[GitFileDock] WARNING: JWT_SECRET is not set or is still the default value. Using a temporary random secret. Sessions will be lost on restart.');
+    return crypto.randomBytes(32).toString('hex');
+  }
+  return secret;
+})();
 
 export interface JWTPayload {
   userId: string;

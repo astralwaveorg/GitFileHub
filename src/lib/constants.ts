@@ -108,6 +108,7 @@ export function formatRelativeTime(date: Date | string): string {
   const now = new Date();
   const d = new Date(date);
   const diff = now.getTime() - d.getTime();
+  if (diff < 0) return '刚刚'; // Handle clock skew
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);

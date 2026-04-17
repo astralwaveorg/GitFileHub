@@ -47,7 +47,13 @@ export async function startScheduler() {
     if (!cronExpr) continue;
 
     const job = cron.schedule(cronExpr, async () => {
-      await syncRepo(repo.id, repo.localPath, repo.sshKeyId);
+      // Query fresh repo data each time to avoid stale closure capture
+      const freshRepo = await prisma.repo.findUnique({ where: { id: repo.id } });
+      if (!freshRepo) {
+        stopRepoSchedule(repo.id);
+        return;
+      }
+      await syncRepo(freshRepo.id, freshRepo.localPath, freshRepo.sshKeyId);
     });
 
     activeJobs.set(repo.id, job);
@@ -72,7 +78,13 @@ export async function updateRepoSchedule(repoId: string) {
   if (!cronExpr) return;
 
   const job = cron.schedule(cronExpr, async () => {
-    await syncRepo(repo.id, repo.localPath, repo.sshKeyId);
+    // Query fresh repo data each time
+    const freshRepo = await prisma.repo.findUnique({ where: { id: repo.id } });
+    if (!freshRepo) {
+      stopRepoSchedule(repo.id);
+      return;
+    }
+    await syncRepo(freshRepo.id, freshRepo.localPath, freshRepo.sshKeyId);
   });
 
   activeJobs.set(repo.id, job);

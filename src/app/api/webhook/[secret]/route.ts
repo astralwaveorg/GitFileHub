@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { gitPull } from '@/lib/git';
-import crypto from 'crypto';
-import fs from 'fs/promises';
-import os from 'os';
-import path from 'path';
+import { withSshKey } from '@/lib/ssh-key-helper';
 
 // Handle different webhook platforms: GitHub, Gitea, Gitee
 export async function POST(
@@ -23,56 +20,43 @@ export async function POST(
     return NextResponse.json({ error: 'Repo not found' }, { status: 404 });
   }
 
-  // Verify webhook signature
-  const signature = request.headers.get('x-hub-signature-256')
-    || request.headers.get('x-gitea-signature')
-    || request.headers.get('x-gitee-signature');
-
-  if (signature) {
-    const body = await request.text();
-    const { decrypt } = await import('@/lib/crypto');
-    const privateKey = decrypt(repo.sshKey.privateKey);
-    // We can't easily verify HMAC without the webhook secret token
-    // For now, just check that a signature exists (the secret URL path is already verification)
-    // Re-parse body
-    try {
-      const payload = JSON.parse(body);
-      const event = request.headers.get('x-github-event')
-        || request.headers.get('x-gitea-event')
-        || request.headers.get('x-gitee-event')
-        || '';
-
-      // Handle ping event
-      if (event === 'ping') {
-        return NextResponse.json({ message: 'pong' });
-      }
-
-      // Only handle push events
-      if (event !== 'push') {
-        return NextResponse.json({ message: 'Event ignored', event });
-      }
-    } catch {
-      return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
-    }
+  // Read the raw body for event parsing and signature verification
+  let body: string;
+  try {
+    body = await request.text();
+  } catch {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
 
-  // Pull latest changes
-  const sshKeyPath = path.join(os.tmpdir(), `gfd-key-${repo.id}`);
+  // Determine event type
+  const event = request.headers.get('x-github-event')
+    || request.headers.get('x-gitea-event')
+    || request.headers.get('x-gitee-event')
+    || '';
+
+  // Handle ping event
+  if (event === 'ping') {
+    return NextResponse.json({ message: 'pong' });
+  }
+
+  // Only handle push events — reject everything else
+  if (event !== 'push') {
+    return NextResponse.json({ message: 'Event ignored', event });
+  }
+
+  // Pull latest changes using the secure withSshKey helper
   try {
-    const { decrypt } = await import('@/lib/crypto');
-    const privateKey = decrypt(repo.sshKey.privateKey);
-    await fs.writeFile(sshKeyPath, privateKey, { mode: 0o600 });
+    let pullResult: { success: boolean; output?: string; error?: string } | undefined;
+    await withSshKey(repo.sshKeyId, async (keyPath) => {
+      pullResult = await gitPull(repo.localPath, keyPath);
+    });
 
-    const result = await gitPull(repo.localPath, sshKeyPath);
-
-    if (result.success) {
-      return NextResponse.json({ success: true, message: 'Pull successful', output: result.output });
+    if (pullResult?.success) {
+      return NextResponse.json({ success: true, message: 'Pull successful', output: pullResult.output });
     } else {
-      return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+      return NextResponse.json({ success: false, error: pullResult?.error || 'Pull failed' }, { status: 500 });
     }
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  } finally {
-    try { await fs.unlink(sshKeyPath); } catch {}
+  } catch {
+    return NextResponse.json({ success: false, error: 'Webhook processing failed' }, { status: 500 });
   }
 }

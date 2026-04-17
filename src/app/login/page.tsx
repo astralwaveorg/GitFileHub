@@ -19,7 +19,11 @@ import Link from 'next/link';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') || '/';
+  const rawRedirect = searchParams.get('redirect') || '/';
+  // Prevent open redirect: only allow relative internal paths
+  const redirect = (rawRedirect.startsWith('/') && !rawRedirect.startsWith('//'))
+    ? rawRedirect
+    : '/';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -50,7 +54,8 @@ function LoginForm() {
         return;
       }
 
-      if (data.user?.mustChangePwd) {
+      const needsPwdChange = !!data.user?.mustChangePwd;
+      if (needsPwdChange) {
         setMustChangePwd(true);
       }
 
@@ -60,7 +65,7 @@ function LoginForm() {
       setTimeout(() => {
         router.push(redirect);
         router.refresh();
-      }, mustChangePwd ? 2500 : 500);
+      }, needsPwdChange ? 2500 : 500);
     } catch {
       setError('网络错误，请重试');
       setLoading(false);

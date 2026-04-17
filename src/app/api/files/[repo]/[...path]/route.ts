@@ -32,7 +32,9 @@ async function resolveRepo(repoIdentifier: string) {
 function matchesHiddenPath(name: string, hiddenPatterns: string[]): boolean {
   for (const pattern of hiddenPatterns) {
     if (pattern.includes('*')) {
-      const regex = new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      // Escape all regex special chars first, then convert * to .*
+      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp('^' + escaped + '$');
       if (regex.test(name)) return true;
     } else if (name === pattern) {
       return true;
@@ -64,7 +66,7 @@ export async function GET(
     // Security: prevent path traversal
     const resolvedFullPath = path.resolve(fullPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedFullPath.startsWith(resolvedBasePath)) {
+    if (!resolvedFullPath.startsWith(resolvedBasePath + path.sep) && resolvedFullPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 
@@ -166,11 +168,14 @@ export async function POST(
     // Security: prevent path traversal
     const resolvedFullPath = path.resolve(fullPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedFullPath.startsWith(resolvedBasePath)) {
+    if (!resolvedFullPath.startsWith(resolvedBasePath + path.sep) && resolvedFullPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 
-    const body = await request.json();
+    let body: { type?: string; content?: string };
+    try { body = await request.json(); } catch {
+      return NextResponse.json({ error: '请求体无效' }, { status: 400 });
+    }
     const { type, content } = body;
 
     if (type === 'directory') {
@@ -225,18 +230,29 @@ export async function PUT(
     // Security: prevent path traversal
     const resolvedFullPath = path.resolve(fullPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedFullPath.startsWith(resolvedBasePath)) {
+    if (!resolvedFullPath.startsWith(resolvedBasePath + path.sep) && resolvedFullPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 
-    const body = await request.json();
+    let body: { content?: string; newName?: string };
+    try { body = await request.json(); } catch {
+      return NextResponse.json({ error: '请求体无效' }, { status: 400 });
+    }
     const { content, newName } = body;
 
     let commitMsg = '';
 
     if (newName) {
+      // Security: validate newName does not contain path separators or traversal
+      if (newName.includes('/') || newName.includes('\\') || newName.includes('..')) {
+        return NextResponse.json({ error: '文件名无效' }, { status: 400 });
+      }
       const parentDir = path.dirname(fullPath);
       const newPath = path.join(parentDir, newName);
+      const resolvedNewPath = path.resolve(newPath);
+      if (!resolvedNewPath.startsWith(resolvedBasePath + path.sep)) {
+        return NextResponse.json({ error: '文件名无效' }, { status: 400 });
+      }
       await fs.rename(fullPath, newPath);
       const newRelativePath = path.dirname(relativePath) ? `${path.dirname(relativePath)}/${newName}` : newName;
       commitMsg = `重命名: ${relativePath} -> ${newRelativePath}`;
@@ -285,7 +301,7 @@ export async function DELETE(
     // Security: prevent path traversal
     const resolvedFullPath = path.resolve(fullPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedFullPath.startsWith(resolvedBasePath)) {
+    if (!resolvedFullPath.startsWith(resolvedBasePath + path.sep) && resolvedFullPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 

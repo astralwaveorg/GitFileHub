@@ -282,6 +282,7 @@ function BrowseContent() {
           repo={repo}
           onClose={() => setPreviewFile(null)}
           onSave={handleSave}
+          onEdit={() => {}}
         />
       )}
 

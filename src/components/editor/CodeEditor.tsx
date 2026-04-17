@@ -1,9 +1,9 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useId } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightActiveLine } from '@codemirror/view';
 import { EditorState, Extension } from '@codemirror/state';
-import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, indentWithTab, history, historyKeymap, undo, redo } from '@codemirror/commands';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
@@ -55,7 +55,6 @@ export function CodeEditor({ content, language, onSave, saving }: CodeEditorProp
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lineCountRef = useRef<HTMLSpanElement>(null);
-  const id = useId();
 
   const getExtensions = useCallback((): Extension[] => {
     const langExt = LANGUAGE_EXTENSIONS[language] || LANGUAGE_EXTENSIONS.plaintext;
@@ -97,6 +96,7 @@ export function CodeEditor({ content, language, onSave, saving }: CodeEditorProp
   useEffect(() => {
     if (!editorRef.current) return;
 
+    // Create editor once on mount
     const state = EditorState.create({
       doc: content,
       extensions: getExtensions(),
@@ -118,7 +118,18 @@ export function CodeEditor({ content, language, onSave, saving }: CodeEditorProp
       view.destroy();
       viewRef.current = null;
     };
-  }, [content, getExtensions]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update content externally when it changes (e.g. after save)
+  useEffect(() => {
+    if (!viewRef.current) return;
+    const currentContent = viewRef.current.state.doc.toString();
+    if (content !== currentContent) {
+      viewRef.current.dispatch({
+        changes: { from: 0, to: viewRef.current.state.doc.length, insert: content },
+      });
+    }
+  }, [content]);
 
   const handleSave = useCallback(() => {
     if (!viewRef.current || saving) return;
@@ -128,16 +139,12 @@ export function CodeEditor({ content, language, onSave, saving }: CodeEditorProp
 
   const handleUndo = useCallback(() => {
     if (!viewRef.current) return;
-    import('@codemirror/commands').then(({ undo }) => {
-      undo(viewRef.current!);
-    });
+    undo(viewRef.current);
   }, []);
 
   const handleRedo = useCallback(() => {
     if (!viewRef.current) return;
-    import('@codemirror/commands').then(({ redo }) => {
-      redo(viewRef.current!);
-    });
+    redo(viewRef.current);
   }, []);
 
   return (

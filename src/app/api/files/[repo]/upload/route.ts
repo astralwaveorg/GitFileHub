@@ -8,11 +8,12 @@ import path from 'path';
 
 export const runtime = 'nodejs';
 
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
 /**
  * POST /api/files/[repo]/upload
  * Auth required. Multipart upload files to a repo path.
  * Query params: path (target directory), overwrite (boolean).
- * Reads repoId from URL path segment.
  */
 export async function POST(
   request: NextRequest,
@@ -44,7 +45,7 @@ export async function POST(
     const fullTargetPath = path.join(repo.localPath, targetPath);
     const resolvedTargetPath = path.resolve(fullTargetPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedTargetPath.startsWith(resolvedBasePath)) {
+    if (!resolvedTargetPath.startsWith(resolvedBasePath + path.sep) && resolvedTargetPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 
@@ -61,19 +62,38 @@ export async function POST(
 
     const uploaded: string[] = [];
     const skipped: string[] = [];
+    const errors: string[] = [];
 
     for (const file of files) {
-      const filePath = path.join(resolvedTargetPath, file.name);
-      const exists = await fs.stat(filePath).then(() => true).catch(() => false);
-
-      if (exists && !overwrite) {
-        skipped.push(file.name);
+      // Validate file size
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`${file.name}: 文件大小超过 100MB 限制`);
         continue;
       }
 
-      const buffer = Buffer.from(await file.arrayBuffer());
-      await fs.writeFile(filePath, buffer);
-      uploaded.push(file.name);
+      // Security: sanitize filename and prevent path traversal via file.name
+      const safeName = path.basename(file.name);
+      const filePath = path.join(resolvedTargetPath, safeName);
+      const resolvedFilePath = path.resolve(filePath);
+      if (!resolvedFilePath.startsWith(resolvedBasePath + path.sep) && resolvedFilePath !== resolvedBasePath) {
+        errors.push(`${file.name}: 文件名无效`);
+        continue;
+      }
+
+      const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+
+      if (exists && !overwrite) {
+        skipped.push(safeName);
+        continue;
+      }
+
+      try {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        await fs.writeFile(filePath, buffer);
+        uploaded.push(safeName);
+      } catch {
+        errors.push(`${safeName}: 写入失败`);
+      }
     }
 
     // Auto git add + commit + push
@@ -91,7 +111,8 @@ export async function POST(
       success: true,
       uploaded,
       skipped,
-      message: `成功上传 ${uploaded.length} 个文件${skipped.length > 0 ? `，跳过 ${skipped.length} 个已存在文件` : ''}`,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `成功上传 ${uploaded.length} 个文件${skipped.length > 0 ? `，跳过 ${skipped.length} 个已存在文件` : ''}${errors.length > 0 ? `，${errors.length} 个文件失败` : ''}`,
     });
   } catch {
     return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });

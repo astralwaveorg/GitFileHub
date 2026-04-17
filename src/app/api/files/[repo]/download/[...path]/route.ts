@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { createReadStream, stat } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
-import { stat } from 'fs/promises';
+import { Readable } from 'stream';
 
 /**
  * GET /api/files/[repo]/download/[...path]
@@ -27,56 +28,49 @@ export async function GET(
     // Security: prevent path traversal
     const resolvedFullPath = path.resolve(fullPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedFullPath.startsWith(resolvedBasePath)) {
+    if (!resolvedFullPath.startsWith(resolvedBasePath + path.sep) && resolvedFullPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 
-    const fileStat = await stat(resolvedFullPath).catch(() => null);
+    const fileStat = await fs.stat(resolvedFullPath).catch(() => null);
     if (!fileStat) {
       return NextResponse.json({ error: '文件不存在' }, { status: 404 });
     }
 
     if (fileStat.isFile()) {
-      const buffer = await fs.readFile(resolvedFullPath);
       const fileName = path.basename(relativePath);
-      return new NextResponse(buffer, {
+      // Stream file instead of buffering entirely in memory
+      const fileStream = createReadStream(resolvedFullPath);
+      const readable = Readable.from(fileStream);
+
+      return new NextResponse(readable as unknown as BodyInit, {
         headers: {
           'Content-Type': 'application/octet-stream',
           'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-          'Content-Length': String(buffer.length),
+          'Content-Length': String(fileStat.size),
         },
       });
     } else if (fileStat.isDirectory()) {
       // Create ZIP archive on the fly
       const archiver = await import('archiver');
-      const { Writable } = await import('stream');
 
       const dirName = path.basename(relativePath) || repo.name;
       const archive = archiver.default('zip', { zlib: { level: 5 } });
 
-      const chunks: Buffer[] = [];
-      const writable = new Writable({
-        write(chunk, _encoding, callback) {
-          chunks.push(chunk);
-          callback();
-        },
-      });
+      // Stream the archive directly to the response
+      const { Readable: NodeReadable, PassThrough } = await import('stream');
+      const passThrough = new PassThrough();
+      archive.pipe(passThrough);
 
-      archive.pipe(writable);
       archive.directory(resolvedFullPath, dirName);
+      archive.finalize();
 
-      await new Promise<void>((resolve, reject) => {
-        archive.on('end', resolve);
-        archive.on('error', reject);
-        archive.finalize();
-      });
+      const nodeReadable = NodeReadable.from(passThrough);
 
-      const zipBuffer = Buffer.concat(chunks);
-      return new NextResponse(zipBuffer, {
+      return new NextResponse(nodeReadable as unknown as BodyInit, {
         headers: {
           'Content-Type': 'application/zip',
           'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(dirName)}.zip`,
-          'Content-Length': String(zipBuffer.length),
         },
       });
     }

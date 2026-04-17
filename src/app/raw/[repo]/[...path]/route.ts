@@ -70,7 +70,7 @@ export async function GET(
     // Security: prevent path traversal
     const resolvedFullPath = path.resolve(fullPath);
     const resolvedBasePath = path.resolve(repo.localPath);
-    if (!resolvedFullPath.startsWith(resolvedBasePath)) {
+    if (!resolvedFullPath.startsWith(resolvedBasePath + path.sep) && resolvedFullPath !== resolvedBasePath) {
       return NextResponse.json({ error: '路径无效' }, { status: 400 });
     }
 
@@ -84,14 +84,19 @@ export async function GET(
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     const fileName = path.basename(relativePath);
 
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        'Content-Length': String(buffer.length),
-        'Cache-Control': 'public, max-age=3600',
-      },
-    });
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      'Content-Length': String(buffer.length),
+      'Cache-Control': 'public, max-age=3600',
+    };
+
+    // Add CSP header for SVG to prevent XSS
+    if (ext === 'svg') {
+      headers['Content-Security-Policy'] = "script-src 'none'";
+    }
+
+    return new NextResponse(buffer, { headers });
   } catch {
     return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
   }

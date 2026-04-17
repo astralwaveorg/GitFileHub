@@ -19,9 +19,30 @@ export async function PUT(
     const body = await request.json();
     const { name, hiddenPaths, autoPullInterval, branch, platform } = body;
 
+    // Validate autoPullInterval
+    if (autoPullInterval !== undefined) {
+      const VALID_INTERVALS = [0, 30, 60, 120, 240];
+      if (!VALID_INTERVALS.includes(Number(autoPullInterval))) {
+        return NextResponse.json({ error: '同步间隔无效' }, { status: 400 });
+      }
+    }
+
+    // Validate platform
+    if (platform !== undefined && !['github', 'gitea', 'gitee'].includes(platform)) {
+      return NextResponse.json({ error: '平台无效' }, { status: 400 });
+    }
+
     const existing = await prisma.repo.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: 'Repo not found' }, { status: 404 });
+    }
+
+    // Check name uniqueness if changing name
+    if (name && name !== existing.name) {
+      const nameConflict = await prisma.repo.findUnique({ where: { name } });
+      if (nameConflict) {
+        return NextResponse.json({ error: '仓库名称已存在' }, { status: 409 });
+      }
     }
 
     const updateData: Record<string, unknown> = {};

@@ -63,6 +63,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate repo name: only allow safe characters, no path traversal
+    if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
+      return NextResponse.json(
+        { error: '仓库名称只能包含字母、数字、点、下划线和短横线' },
+        { status: 400 }
+      );
+    }
+
+    // Validate platform
+    if (!['github', 'gitea', 'gitee'].includes(platform)) {
+      return NextResponse.json(
+        { error: '平台必须是 github、gitea 或 gitee' },
+        { status: 400 }
+      );
+    }
+
+    // Validate branch name
+    if (!/^[a-zA-Z0-9/._-]+$/.test(branch)) {
+      return NextResponse.json(
+        { error: '分支名格式无效' },
+        { status: 400 }
+      );
+    }
+
+    // Validate autoPullInterval
+    const VALID_INTERVALS = [0, 30, 60, 120, 240];
+    if (!VALID_INTERVALS.includes(Number(autoPullInterval))) {
+      return NextResponse.json(
+        { error: '同步间隔必须是 0（关闭）、30、60、120 或 240 分钟' },
+        { status: 400 }
+      );
+    }
+
     // Validate SSH key exists
     const sshKey = await prisma.sSHKey.findUnique({ where: { id: sshKeyId } });
     if (!sshKey) {
