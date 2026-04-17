@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  passwordHash  String
+  mustChangePwd Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SSHKey {
+  id          String   @id @default(cuid())
+  name        String
+  privateKey  String
+  fingerprint String
+  createdAt   DateTime @default(now())
+  repos       Repo[]
+}
+
+model Repo {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  remoteUrl        String
+  localPath        String
+  branch           String   @default("main")
+  sshKeyId         String
+  sshKey           SSHKey   @relation(fields: [sshKeyId], references: [id], onDelete: Cascade)
+  hiddenPaths      String   @default("[]")
+  autoPullInterval Int      @default(0)
+  webhookSecret    String   @unique
+  platform         String   @default("github")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
