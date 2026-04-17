@@ -26,9 +26,10 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
+    type KeyItem = { id: string; name: string; fingerprint: string; createdAt: Date; _count: { repos: number } };
     return NextResponse.json({
       success: true,
-      keys: keys.map((k) => ({
+      keys: (keys as KeyItem[]).map((k: KeyItem) => ({
         id: k.id,
         name: k.name,
         fingerprint: k.fingerprint,

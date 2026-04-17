@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/api-auth';
 import { prisma } from '@/lib/db';
 import { withSshKey, generateWebhookSecret } from '@/lib/ssh-key-helper';
 import { gitClone, isGitRepo } from '@/lib/git';
+import { ensureSchedulerStarted } from '@/instrumentation';
 import fs from 'fs/promises';
 
 /**
@@ -12,6 +13,9 @@ import fs from 'fs/promises';
  */
 export async function GET() {
   try {
+    // Ensure scheduler is started (lazy, only once)
+    ensureSchedulerStarted();
+
     const repos = await prisma.repo.findMany({
       select: {
         id: true,

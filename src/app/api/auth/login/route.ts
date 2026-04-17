@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { verifyPassword, signToken } from '@/lib/auth';
+import { ensureSchedulerStarted } from '@/instrumentation';
 
 /**
  * POST /api/auth/login
@@ -40,6 +41,9 @@ export async function POST(request: NextRequest) {
 
     // Sign JWT (7 day expiry)
     const token = signToken({ userId: user.id, username: user.username });
+
+    // Start the auto-sync scheduler (lazy, only once)
+    ensureSchedulerStarted();
 
     // Build response with user info
     const response = NextResponse.json({

@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Upload, X, FileIcon as FileIconLucide } from 'lucide-react';
+import { Upload, X, FileIcon as FileIconLucide, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UploadDialogProps {
@@ -158,7 +158,7 @@ export function UploadDialog({ open, onOpenChange, repoId, currentPath, onSucces
           <Button onClick={handleUpload} disabled={uploading || files.length === 0}>
             {uploading ? (
               <>
-                <span className="animate-spin mr-1">⏳</span>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                 上传中...
               </>
             ) : (

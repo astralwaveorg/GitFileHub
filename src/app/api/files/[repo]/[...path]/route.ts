@@ -32,8 +32,9 @@ async function resolveRepo(repoIdentifier: string) {
 function matchesHiddenPath(name: string, hiddenPatterns: string[]): boolean {
   for (const pattern of hiddenPatterns) {
     if (pattern.includes('*')) {
-      // Escape all regex special chars first, then convert * to .*
-      const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Split pattern by * to escape non-wildcard parts, then join with .*
+      const parts = pattern.split('*');
+      const escaped = parts.map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
       const regex = new RegExp('^' + escaped + '$');
       if (regex.test(name)) return true;
     } else if (name === pattern) {

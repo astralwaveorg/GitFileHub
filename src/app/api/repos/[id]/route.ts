@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/api-auth';
 import { prisma } from '@/lib/db';
+import { updateRepoSchedule, stopRepoSchedule } from '@/lib/scheduler';
 import fs from 'fs/promises';
 
 /**
@@ -62,6 +63,13 @@ export async function PUT(
       data: updateData,
     });
 
+    // Update the auto-sync scheduler if interval changed
+    if (autoPullInterval !== undefined) {
+      updateRepoSchedule(id).catch((err) => {
+        console.error(`[GitFileDock] Failed to update schedule for repo ${id}:`, err);
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -91,6 +99,9 @@ export async function DELETE(
 
     // Delete from DB (cascades to related records)
     await prisma.repo.delete({ where: { id } });
+
+    // Stop any running auto-sync scheduler for this repo
+    stopRepoSchedule(id);
 
     // Optionally delete local directory
     if (deleteLocal) {
